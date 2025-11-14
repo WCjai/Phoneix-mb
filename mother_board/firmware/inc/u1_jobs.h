@@ -1,0 +1,44 @@
+/**
+ * @file u1_jobs.h
+ * @brief UART1 LED "streaming" job table and round-robin scheduler.
+ *
+ * - U1Job: (con, led, next_allowed_tick, active).
+ * - De-dup / reset-on-new helpers:
+ *     u1_jobs_remove_by_con_except(), u1_job_find(), u1_job_alloc(), u1_jobs_clear_all()
+ * - u1_scheduler_emit_one(): called from RIT to enqueue exactly one LED-ON
+ *   frame if timing allows; advances RR pointer.
+ *
+ * Contract:
+ * - RIT decides whether to stream or to poll; when streaming is active the RR
+ *   over jobs runs; otherwise poller runs.
+ * - ISRs may adjust jobs with NVIC masking where needed (callers ensure safety).
+ */
+
+#ifndef INC_U1_JOBS_H_
+#define INC_U1_JOBS_H_
+
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+#include "config.h"
+
+typedef struct {
+    uint8_t  con, led;
+    uint16_t next_allowed_tick;
+    volatile uint8_t active;
+} U1Job;
+
+extern volatile U1Job  g_u1_jobs[MAX_U1_JOBS];
+extern volatile bool   g_led_streaming_active;
+extern uint8_t         u1_jobs_rr;
+
+void    u1_jobs_clear_all(void);
+void    u1_jobs_remove_by_con_except(uint8_t con, uint8_t keep_led);
+uint8_t u1_job_find(uint8_t con, uint8_t led);
+uint8_t u1_job_alloc(uint8_t con, uint8_t led);
+
+// Called from RIT: enqueues one LED frame if time_ok, advances RR
+bool    u1_scheduler_emit_one(void);
+
+
+#endif /* INC_U1_JOBS_H_ */

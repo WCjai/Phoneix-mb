@@ -1,0 +1,27 @@
+/*
+ * sched.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_SCHED_H_
+#define INC_SCHED_H_
+
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+extern volatile uint32_t g_tick;
+extern volatile uint16_t g_app_last_activity_tick;
+extern volatile uint8_t  g_idle_ws_cleared;
+
+extern volatile uint32_t g_alive_mask, g_triggered_mask;
+extern volatile uint32_t round_alive_mask, round_triggered_mask;
+
+extern volatile uint8_t  g_off_broadcast_pending;
+extern volatile uint8_t  g_off_broadcast2_pending;
+
+void sched_commit_and_clear_poll_round(void);
+
+#endif /* INC_SCHED_H_ */

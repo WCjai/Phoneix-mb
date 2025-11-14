@@ -1,0 +1,5 @@
+1763100317538	Rename resource 'periph_uart_rb'
+1763104344287	Rename resource 'lpc_board_nxp_lpcxpresso_1769'
+1763104588825	Rename resource 'board'
+1763104935391	Delete resource 'board_pin'
+1763105295596	Delete resource 'mother_board/firmware/readme.md'

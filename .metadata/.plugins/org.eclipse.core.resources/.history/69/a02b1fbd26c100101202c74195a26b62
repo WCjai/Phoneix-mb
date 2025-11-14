@@ -1,0 +1,15 @@
+/*
+ * isr_gpio.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_ISR_GPIO_H_
+#define INC_ISR_GPIO_H_
+
+#pragma once
+void GPIO_IRQ_HANDLER(void);
+
+
+#endif /* INC_ISR_GPIO_H_ */

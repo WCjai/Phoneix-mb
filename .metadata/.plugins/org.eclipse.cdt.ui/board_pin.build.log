@@ -1,0 +1,27 @@
+12:46:31 **** Build of configuration Debug for project board_pin ****
+make -r -j16 all 
+Building file: ../src/board.c
+Building file: ../src/board_sysinit.c
+Invoking: MCU C Compiler
+arm-none-eabi-gcc -D__REDLIB__ -DDEBUG -D__CODE_RED -D__USE_LPCOPEN -DCORE_M3 -I"C:\Users\mad23\Downloads\workspace-stablev3.3-ws-clean\workspace-stablev3.3-ws-clean\lpc_chip_175x_6x\inc" -I"C:\Users\mad23\Downloads\workspace-stablev3.3-ws-clean\workspace-stablev3.3-ws-clean\board_pin\inc" -O0 -g3 -gdwarf-4 -Wall -c -fmessage-length=0 -fno-builtin -ffunction-sections -fdata-sections -fmerge-constants -fmacro-prefix-map="../src/"= -mcpu=cortex-m3 -mthumb -fstack-usage -specs=redlib.specs -MMD -MP -MF"src/board.d" -MT"src/board.o" -MT"src/board.d" -o "src/board.o" "../src/board.c"
+Invoking: MCU C Compiler
+arm-none-eabi-gcc -D__REDLIB__ -DDEBUG -D__CODE_RED -D__USE_LPCOPEN -DCORE_M3 -I"C:\Users\mad23\Downloads\workspace-stablev3.3-ws-clean\workspace-stablev3.3-ws-clean\lpc_chip_175x_6x\inc" -I"C:\Users\mad23\Downloads\workspace-stablev3.3-ws-clean\workspace-stablev3.3-ws-clean\board_pin\inc" -O0 -g3 -gdwarf-4 -Wall -c -fmessage-length=0 -fno-builtin -ffunction-sections -fdata-sections -fmerge-constants -fmacro-prefix-map="../src/"= -mcpu=cortex-m3 -mthumb -fstack-usage -specs=redlib.specs -MMD -MP -MF"src/board_sysinit.d" -MT"src/board_sysinit.o" -MT"src/board_sysinit.d" -o "src/board_sysinit.o" "../src/board_sysinit.c"
+Finished building: ../src/board_sysinit.c
+Finished building: ../src/board.c
+ 
+ 
+Building target: libboard_pin.a
+Invoking: MCU Archiver
+arm-none-eabi-ar -r  "libboard_pin.a" ./src/board.o ./src/board_sysinit.o   
+arm-none-eabi-ar: creating libboard_pin.a
+Finished building target: libboard_pin.a
+ 
+Performing post-build steps
+arm-none-eabi-size "libboard_pin.a" ; # arm-none-eabi-objdump -h -S "libboard_pin.a" >"libboard_pin.lss"
+   text	   data	    bss	    dec	    hex	filename
+    688	      0	      0	    688	    2b0	board.o (ex libboard_pin.a)
+    214	      0	      0	    214	     d6	board_sysinit.o (ex libboard_pin.a)
+ 
+
+12:46:32 Build Finished. 0 errors, 0 warnings. (took 563ms)
+

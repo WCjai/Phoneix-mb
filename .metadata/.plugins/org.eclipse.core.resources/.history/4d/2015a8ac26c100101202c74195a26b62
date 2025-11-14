@@ -1,0 +1,14 @@
+/*
+ * isr_uart0.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_ISR_UART0_H_
+#define INC_ISR_UART0_H_
+
+#pragma once
+void UART0_IRQHandler(void);
+
+#endif /* INC_ISR_UART0_H_ */

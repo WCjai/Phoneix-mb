@@ -1,0 +1,29 @@
+/*
+ * queues.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_QUEUES_H_
+#define INC_QUEUES_H_
+
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+#include "config.h"
+
+// UART1 TX ring (frames to slaves)
+typedef struct { uint8_t data[9];   uint8_t len; } U1Frame;
+bool u1q_push_isr(const uint8_t *d, uint8_t n);
+bool u1q_pop_main(U1Frame *out);
+extern volatile uint32_t u1_drops;
+
+// UART2 TX ring (frames to BIN)
+typedef struct { uint8_t data[192]; uint8_t len; } U2Frame;
+bool u2q_push_isr(const uint8_t *d, uint8_t n);
+bool u2q_pop_main(U2Frame *out);
+extern volatile uint32_t u2_drops;
+
+
+#endif /* INC_QUEUES_H_ */

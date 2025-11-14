@@ -1,0 +1,36 @@
+/*
+ * config.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_CONFIG_H_
+#define INC_CONFIG_H_
+
+// Timers
+#define RIT_TICK_MS              70
+#define APP_IDLE_MS              2000
+#define APP_IDLE_TICKS           ((APP_IDLE_MS + RIT_TICK_MS - 1) / RIT_TICK_MS)
+
+// Sizes
+#define MAX_CFG                  31
+#define WS_LED_COUNT             96
+#define MAX_U1_JOBS              32
+#define MAX_U2_JOBS              16
+#define U1_TXQ_CAP               128
+#define U2_TXQ_CAP               128
+#define RX_LEN_MAX               (4 + 2 * MAX_CFG)
+#define TX_FRAME_MAX             (MAX_CFG + 10)
+
+// Buttons (GPIO pins are set in main)
+#define BTN_P24_BIT 0x01  // S1 (adds +1)
+#define BTN_P23_BIT 0x02  // S2 (adds +2)
+
+// Debounce (in ticks)
+#define GPIO_IRQ_HANDLER EINT3_IRQHandler
+#define BTN_DEBOUNCE_MS       1000
+#define BTN_DEBOUNCE_TICKS    ((BTN_DEBOUNCE_MS + RIT_TICK_MS - 1) / RIT_TICK_MS)
+
+
+#endif /* INC_CONFIG_H_ */

@@ -1,0 +1,39 @@
+/*
+ * app_status.h
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#ifndef INC_APP_STATUS_H_
+#define INC_APP_STATUS_H_
+
+#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include "config.h"
+#include "proto.h"
+
+// External status bits (buttons)
+extern volatile uint8_t  g_status_ext;
+
+// One-shot and force masks
+extern volatile uint32_t g_status01_mask;
+extern volatile uint32_t g_force01_while_triggered_mask;
+
+// Connector map
+extern uint8_t  cfg_conn[MAX_CFG];
+extern uint8_t  cfg_count;
+
+// Build status frame into internal buffer and mark ready
+void request_status_reply(void);
+
+// Accessors for main loop to send prepared status
+size_t       app_status_peek_len(void);
+const uint8_t* app_status_peek_buf(void);
+void         app_status_mark_sent(void);
+
+// Handlers that modify config/status
+void handle_upload_map(const uint8_t *pay, uint8_t pal);
+
+#endif /* INC_APP_STATUS_H_ */
