@@ -1,0 +1,122 @@
+#include "chip.h"
+#include "board.h"
+
+#include <stdbool.h>
+#include <string.h>
+
+#include "config.h"
+#include "proto.h"
+#include "queues.h"
+#include "ws_led.h"
+#include "app_status.h"
+#include "u1_jobs.h"
+#include "u2_jobs.h"
+#include "buttons.h"
+#include "sched.h"
+#include "isr_uart0.h"
+#include "isr_uart1.h"
+#include "isr_gpio.h"
+#include "isr_rit.h"
+
+// Map your pins here (same as original)
+#define GPIO_BUTTON_PORT 2
+#define GPIO_BUTTON_S2_PIN  3 // P2.3
+#define GPIO_BUTTON_S1_PIN  4 // P2.4
+
+// UART macro aliases for readability (same as original)
+#define UART_APP   LPC_UART0
+#define UART_SLAVE LPC_UART1
+#define UART_BIN   LPC_UART2
+
+int main(void){
+    SystemCoreClockUpdate();
+    Board_Init();
+
+    // Buttons: inputs
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S1_PIN);
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S2_PIN);
+
+    /* Clear any latched edge flags before enabling */
+    Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+
+    /* Enable BOTH falling (press) and rising (release) edges */
+    Chip_GPIOINT_SetIntFalling(LPC_GPIOINT, GPIOINT_PORT2,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+    Chip_GPIOINT_SetIntRising(LPC_GPIOINT, GPIOINT_PORT2,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+
+    NVIC_ClearPendingIRQ(EINT3_IRQn);
+    NVIC_SetPriority(EINT3_IRQn, 2);
+    NVIC_EnableIRQ(EINT3_IRQn);
+
+    Chip_IOCON_Init(LPC_IOCON);
+    Chip_GPIO_Init(LPC_GPIO);
+
+
+    Chip_IOCON_PinMuxSet(LPC_IOCON, 3, 25, IOCON_FUNC0 | IOCON_MODE_INACT);
+    Chip_IOCON_PinMuxSet(LPC_IOCON, 3, 26, IOCON_FUNC0 | IOCON_MODE_INACT);
+    Chip_GPIO_SetPinDIROutput(LPC_GPIO, 3, 25);
+    Chip_GPIO_SetPinDIROutput(LPC_GPIO, 3, 26);
+
+    // UART0: App
+    Chip_UART_Init(UART_APP);
+    Chip_UART_SetBaud(UART_APP, 19200);
+    Chip_UART_ConfigData(UART_APP, UART_LCR_WLEN8 | UART_LCR_SBS_1BIT);
+    Chip_UART_SetupFIFOS(UART_APP, UART_FCR_FIFO_EN | UART_FCR_TRG_LEV2);
+    Chip_UART_TXEnable(UART_APP);
+
+    // UART1: Slaves
+    Chip_UART_Init(UART_SLAVE);
+    Chip_UART_SetBaud(UART_SLAVE, 9600);
+    Chip_UART_ConfigData(UART_SLAVE, UART_LCR_WLEN8 | UART_LCR_SBS_1BIT);
+    Chip_UART_SetupFIFOS(UART_SLAVE, UART_FCR_FIFO_EN | UART_FCR_TRG_LEV2);
+    Chip_UART_TXEnable(UART_SLAVE);
+
+    // UART2: BIN
+    Chip_UART_Init(UART_BIN);
+    Chip_UART_SetBaud(UART_BIN, 9600);
+    Chip_UART_ConfigData(UART_BIN, UART_LCR_WLEN8 | UART_LCR_SBS_1BIT);
+    Chip_UART_SetupFIFOS(UART_BIN, UART_FCR_FIFO_EN | UART_FCR_TRG_LEV2);
+    Chip_UART_TXEnable(UART_BIN);
+
+    // UART IRQs
+    Chip_UART_IntEnable(UART_APP,   UART_IER_RBRINT | UART_IER_RLSINT);
+    NVIC_SetPriority(UART0_IRQn, 3); NVIC_EnableIRQ(UART0_IRQn);
+
+    Chip_UART_IntEnable(UART_SLAVE, UART_IER_RBRINT | UART_IER_RLSINT);
+    NVIC_SetPriority(UART1_IRQn, 2); NVIC_EnableIRQ(UART1_IRQn);
+
+    // RIT (70 ms)
+    Chip_RIT_Init(LPC_RITIMER);
+    Chip_RIT_SetTimerInterval(LPC_RITIMER, RIT_TICK_MS);
+    NVIC_ClearPendingIRQ(RITIMER_IRQn);
+    NVIC_SetPriority(RITIMER_IRQn, 1);
+    NVIC_EnableIRQ(RITIMER_IRQn);
+
+    // WS
+    ws_init();
+
+    for (;;){
+        // Send prepared App status (if any)
+        size_t n = app_status_peek_len();
+        if (n){
+            const uint8_t* p = app_status_peek_buf();
+            Chip_UART_SendBlocking(UART_APP, p, (int)n);
+            app_status_mark_sent();
+            g_app_last_activity_tick = (uint16_t)g_tick;
+        }
+
+        // Drain UART1/2 TX queues
+        U1Frame fr1;
+        if (u1q_pop_main(&fr1)) Chip_UART_SendBlocking(UART_SLAVE, fr1.data, fr1.len);
+
+        U2Frame fr2;
+        if (u2q_pop_main(&fr2)) Chip_UART_SendBlocking(UART_BIN,   fr2.data, fr2.len);
+
+        // WS flush (never in ISR)
+        if (ws_flush_pending){ ws_flush_pending = 0; ws_flush_if_dirty(); }
+
+        __WFI();
+    }
+}

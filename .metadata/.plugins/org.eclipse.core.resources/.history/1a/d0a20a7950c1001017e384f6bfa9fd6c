@@ -1,0 +1,44 @@
+/**
+ * @file ws_led.h
+ * @brief WS2812 (NeoPixel) framebuffer + flush control (no ISR writes).
+ *
+ * - In-memory RGB buffer for WS strip(s).
+ * - High-level ops: clear all, set one LED, set "only bin1" LED,
+ *                   set a mask list and clear others.
+ * - Flush is *requested* (cheap) from anywhere; actual I/O happens in main.
+ *
+ * Threading: Functions are non-blocking; hardware write occurs via
+ * ws_flush_if_pending() in the main loop to keep ISRs short.
+ */
+
+#ifndef INC_WS_LED_H_
+#define INC_WS_LED_H_
+
+#pragma once
+#include <stdint.h>
+#include "config.h"
+#include <stdbool.h>
+#include "ws2812b.h"
+
+// -------- Public state flags (used by RIT/main/handlers) --------
+extern volatile bool     ws_dirty;          // set to true when framebuffer changed
+extern volatile uint8_t  ws_flush_pending;  // request a flush in main()
+
+// -------- Public API --------
+void ws_init(void);  // optional: call once (safe if called multiple times)
+
+void ws_clear_all(void);
+void ws_set_red_1indexed(uint16_t led1);
+
+// Mirror helpers you already call in handlers
+void ws_set_only_bin1(uint16_t led1);
+void ws_set_mask_bin1_and_clear_others(uint8_t max_led, const uint8_t *list);
+
+// The safe flush: atomic, and (optionally) rate-limited by WS_MIN_FLUSH_TICKS
+void ws_flush_if_dirty(void);
+
+// Access to the underlying strip objects if ever needed elsewhere (read-only use)
+extern WS2812B ws_b1;
+extern WS2812B ws_b2;
+
+#endif /* INC_WS_LED_H_ */
