@@ -36,14 +36,13 @@ int main(void){
     Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S1_PIN);
     Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S2_PIN);
 
-    /* Clear any latched edge flags before enabling */
+    // Clear any latched edge flags *before* enabling
     Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2,
         (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
 
-    /* Enable BOTH falling (press) and rising (release) edges */
+    // Arm falling-edge only
+    Chip_GPIOINT_SetIntRising (LPC_GPIOINT, GPIOINT_PORT2, 0);
     Chip_GPIOINT_SetIntFalling(LPC_GPIOINT, GPIOINT_PORT2,
-        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
-    Chip_GPIOINT_SetIntRising(LPC_GPIOINT, GPIOINT_PORT2,
         (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
 
     NVIC_ClearPendingIRQ(EINT3_IRQn);
