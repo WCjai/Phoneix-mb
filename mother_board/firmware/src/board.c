@@ -13,6 +13,14 @@
 #define RELAY6_GPIO_PORT_NUM  0
 #define RELAY6_GPIO_BIT_NUM   8
 
+#define GPIO_BUTTON_PORT 2
+#define GPIO_BUTTON_S2_PIN  3 // P2.3
+#define GPIO_BUTTON_S1_PIN  4 // P2.4
+
+#define GPIO_WS2812B_PORT 3
+#define GPIO_WS2812B_1_PIN  25 // P3.25
+#define GPIO_WS2812B_2_PIN  26 // P3.26
+
 typedef struct { uint8_t port, pin; } relay_pin_t;
 
 static const relay_pin_t kRelayPins[6] = {
@@ -45,6 +53,20 @@ void Board_ws2812_Init(void) {
     LPC_SYSCTL->PCONP |= (1 << 15);
 }
 
+void Board_buttons_sw_Init(void) {
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S1_PIN);
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S2_PIN);
+    Chip_GPIO_SetPinDIROutput(LPC_GPIO, GPIO_WS2812B_PORT, GPIO_WS2812B_1_PIN);
+    Chip_GPIO_SetPinDIROutput(LPC_GPIO, GPIO_WS2812B_PORT, GPIO_WS2812B_2_PIN);
+
+    Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIO_BUTTON_PORT,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+    Chip_GPIOINT_SetIntFalling(LPC_GPIOINT, GPIO_BUTTON_PORT,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+    Chip_GPIOINT_SetIntRising(LPC_GPIOINT, GPIO_BUTTON_PORT,
+        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
+}
+
 void Board_Relay_Set(uint8_t relay, bool on) {
     if (relay >= 1 && relay <= 6) {
         const relay_pin_t *rp = &kRelayPins[relay - 1];
@@ -52,8 +74,11 @@ void Board_Relay_Set(uint8_t relay, bool on) {
     }
 }
 
+
 void Board_Init(void) {
     Chip_GPIO_Init(LPC_GPIO);
     Chip_IOCON_Init(LPC_IOCON);
     Board_Relays_Init();
+    Board_buttons_sw_Init();
+
 }

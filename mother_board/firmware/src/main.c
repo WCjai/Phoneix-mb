@@ -18,10 +18,7 @@
 #include "isr_gpio.h"
 #include "isr_rit.h"
 
-// Map your pins here (same as original)
-#define GPIO_BUTTON_PORT 2
-#define GPIO_BUTTON_S2_PIN  3 // P2.3
-#define GPIO_BUTTON_S1_PIN  4 // P2.4
+
 
 // UART macro aliases for readability (same as original)
 #define UART_APP   LPC_UART0
@@ -32,32 +29,9 @@ int main(void){
     SystemCoreClockUpdate();
     Board_Init();
 
-    // Buttons: inputs
-    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S1_PIN);
-    Chip_GPIO_SetPinDIRInput(LPC_GPIO, GPIO_BUTTON_PORT, GPIO_BUTTON_S2_PIN);
-
-    /* Clear any latched edge flags before enabling */
-    Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2,
-        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
-
-    /* Enable BOTH falling (press) and rising (release) edges */
-    Chip_GPIOINT_SetIntFalling(LPC_GPIOINT, GPIOINT_PORT2,
-        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
-    Chip_GPIOINT_SetIntRising(LPC_GPIOINT, GPIOINT_PORT2,
-        (1u << GPIO_BUTTON_S1_PIN) | (1u << GPIO_BUTTON_S2_PIN));
-
     NVIC_ClearPendingIRQ(EINT3_IRQn);
     NVIC_SetPriority(EINT3_IRQn, 2);
     NVIC_EnableIRQ(EINT3_IRQn);
-
-    Chip_IOCON_Init(LPC_IOCON);
-    Chip_GPIO_Init(LPC_GPIO);
-
-
-    Chip_IOCON_PinMuxSet(LPC_IOCON, 3, 25, IOCON_FUNC0 | IOCON_MODE_INACT);
-    Chip_IOCON_PinMuxSet(LPC_IOCON, 3, 26, IOCON_FUNC0 | IOCON_MODE_INACT);
-    Chip_GPIO_SetPinDIROutput(LPC_GPIO, 3, 25);
-    Chip_GPIO_SetPinDIROutput(LPC_GPIO, 3, 26);
 
     // UART0: App
     Chip_UART_Init(UART_APP);

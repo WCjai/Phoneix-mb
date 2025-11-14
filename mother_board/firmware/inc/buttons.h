@@ -19,8 +19,6 @@
 extern volatile uint16_t g_btn1_last_tick;
 extern volatile uint16_t g_btn2_last_tick;
 
-static inline void clear_btn_p23_only(uint8_t *status_ext){
-    *status_ext &= (uint8_t)~BTN_P23_BIT; // clear bit1 only
-}
+
 
 #endif /* INC_BUTTONS_H_ */

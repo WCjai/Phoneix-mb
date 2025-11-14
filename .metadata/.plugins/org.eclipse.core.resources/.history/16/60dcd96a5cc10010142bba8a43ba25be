@@ -1,0 +1,95 @@
+#include "buttons.h"
+#include "sched.h"
+#include "config.h"
+#include "app_status.h"   // request_status_reply()
+#include "chip.h"
+
+#ifndef GPIO_BUTTON_PORT
+#define GPIO_BUTTON_PORT 2
+#endif
+#ifndef GPIO_BUTTON_S1_PIN
+#define GPIO_BUTTON_S1_PIN 4  // P2.4 (S1)
+#endif
+#ifndef GPIO_BUTTON_S2_PIN
+#define GPIO_BUTTON_S2_PIN 3  // P2.3 (S2)
+#endif
+
+extern volatile uint8_t  g_status_ext;
+extern volatile uint32_t g_tick;
+
+/* One-click-per down→up state */
+typedef struct {
+    uint8_t  pressed;          // 1 after accepted falling; cleared on accepted rising
+    uint16_t down_tick;        // when the falling was accepted
+    uint16_t last_event_tick;  // last accepted rising (to block chatter)
+} BtnState;
+
+static volatile BtnState s1 = {0,0,0};
+static volatile BtnState s2 = {0,0,0};
+
+static inline int pin_is_low(uint8_t pin){
+    return !Chip_GPIO_GetPinState(LPC_GPIO, GPIO_BUTTON_PORT, pin);
+}
+static inline int pin_is_high(uint8_t pin){
+    return  Chip_GPIO_GetPinState(LPC_GPIO, GPIO_BUTTON_PORT, pin);
+}
+
+void EINT3_IRQHandler(void){
+    /* Latch & clear pending edges on Port2 */
+    uint32_t stat_f = Chip_GPIOINT_GetStatusFalling(LPC_GPIOINT, GPIOINT_PORT2);
+    if (stat_f) Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2, stat_f);
+    uint32_t stat_r = Chip_GPIOINT_GetStatusRising (LPC_GPIOINT, GPIOINT_PORT2);
+    if (stat_r) Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2, stat_r);
+
+    const uint16_t now = (uint16_t)g_tick;
+
+    /* --- S1 (P2.4, BTN_P24_BIT) --- */
+    if (stat_f & (1u << GPIO_BUTTON_S1_PIN)) {
+        /* Accept falling only if not already pressed, pin truly low, and past debounce since last event */
+        if (!s1.pressed && pin_is_low(GPIO_BUTTON_S1_PIN) &&
+            (int16_t)((uint16_t)now - s1.last_event_tick) >= (int16_t)BTN_DEBOUNCE_TICKS) {
+            s1.pressed   = 1;
+            s1.down_tick = now;
+        }
+    }
+    if (stat_r & (1u << GPIO_BUTTON_S1_PIN)) {
+        /* Accept rising as a "click" only if previously pressed, pin high, and press lasted past debounce */
+        if (s1.pressed && pin_is_high(GPIO_BUTTON_S1_PIN) &&
+            (int16_t)((uint16_t)now - s1.down_tick) >= (int16_t)BTN_DEBOUNCE_TICKS) {
+            s1.pressed         = 0;
+            s1.last_event_tick = now;
+
+            g_status_ext |= BTN_P24_BIT;   // register ONE click for S1 (bit0)
+            request_status_reply();        // push heartbeat to App
+            /* Optional: wake idle watchdog immediately
+               extern volatile uint16_t g_app_last_activity_tick;
+               g_app_last_activity_tick = (uint16_t)g_tick;
+            */
+        } else if (s1.pressed && pin_is_high(GPIO_BUTTON_S1_PIN)) {
+            /* Rising too soon/noise: drop the pressed state without generating a click */
+            s1.pressed = 0;
+        }
+    }
+
+    /* --- S2 (P2.3, BTN_P23_BIT) --- */
+    if (stat_f & (1u << GPIO_BUTTON_S2_PIN)) {
+        if (!s2.pressed && pin_is_low(GPIO_BUTTON_S2_PIN) &&
+            (int16_t)((uint16_t)now - s2.last_event_tick) >= (int16_t)BTN_DEBOUNCE_TICKS) {
+            s2.pressed   = 1;
+            s2.down_tick = now;
+        }
+    }
+    if (stat_r & (1u << GPIO_BUTTON_S2_PIN)) {
+        if (s2.pressed && pin_is_high(GPIO_BUTTON_S2_PIN) &&
+            (int16_t)((uint16_t)now - s2.down_tick) >= (int16_t)BTN_DEBOUNCE_TICKS) {
+            s2.pressed         = 0;
+            s2.last_event_tick = now;
+
+            g_status_ext |= BTN_P23_BIT;   // register ONE click for S2 (bit1)
+            request_status_reply();
+            /* Optional wake as above */
+        } else if (s2.pressed && pin_is_high(GPIO_BUTTON_S2_PIN)) {
+            s2.pressed = 0;
+        }
+    }
+}

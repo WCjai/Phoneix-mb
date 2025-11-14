@@ -26,7 +26,8 @@ static void handle_led_reset(const uint8_t *pay, uint8_t pal){
     extern volatile uint8_t g_off_broadcast_pending, g_off_broadcast2_pending;
     g_off_broadcast_pending  = 1;
     g_off_broadcast2_pending = 1;
-    // Clear only P2.3 (bit1) if needed: not strictly required here
+    // Clear only P2.3 (bit1)
+    g_status_ext &= (uint8_t)~BTN_P23_BIT;
 }
 
 static void handle_relay_set(const uint8_t *pay, uint8_t pal){

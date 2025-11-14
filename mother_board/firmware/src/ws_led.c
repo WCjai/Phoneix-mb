@@ -14,7 +14,6 @@
 #include "ws2812b.h"
 #include <string.h>
 
-/* ===== Tuning knobs (can be overridden in config.h) ===================== */
 
 #ifndef WS_LED_COUNT
 #define WS_LED_COUNT 96
@@ -31,10 +30,9 @@
 #define WS_HAS_STRIP2 1
 #endif
 
-/* Provided by your scheduler (RIT tick counter). */
+
 extern volatile uint32_t g_tick;
 
-/* ===== Framebuffer & driver handles ===================================== */
 
 static RGB_t   ws_buf[WS_LED_COUNT];
 static WS2812B ws_b1 = { .leds = ws_buf, .num_leds = WS_LED_COUNT };
@@ -42,7 +40,6 @@ static WS2812B ws_b1 = { .leds = ws_buf, .num_leds = WS_LED_COUNT };
 static WS2812B ws_b2 = { .leds = ws_buf, .num_leds = WS_LED_COUNT };
 #endif
 
-/* ===== Local state ======================================================= */
 
 static volatile uint8_t  s_ws_flush_pending = 0;   /* request from callers */
 static volatile uint8_t  s_ws_dirty         = 0;   /* buffer changed since last flush */
@@ -52,7 +49,6 @@ static volatile uint16_t s_ws_last_led_bin1 = 0;   /* for ws_set_only_bin1() */
 static uint16_t s_ws_next_flush_tick = 0;          /* coalescing window */
 #endif
 
-/* ===== Minimal critical-section helpers (no CMSIS needed) =============== */
 
 static inline uint32_t primask_save_and_disable(void){
     uint32_t primask;
@@ -158,7 +154,6 @@ void ws_set_only_bin1(uint16_t led1){
 }
 
 void ws_set_mask_bin1_and_clear_others(uint8_t max_led, const uint8_t *list){
-    /* Clear all, then light listed (skip 0 entries) */
     memset(ws_buf, 0, sizeof(ws_buf));
     s_ws_last_led_bin1 = 0;
 

@@ -38,8 +38,6 @@
 
 // 0 = no throttling; 2 means ~140 ms min gap between strip flushes
 #define WS_MIN_FLUSH_TICKS  0
-
-// If you physically drive only one strip
 #define WS_HAS_STRIP2       1
 
 #endif /* INC_CONFIG_H_ */

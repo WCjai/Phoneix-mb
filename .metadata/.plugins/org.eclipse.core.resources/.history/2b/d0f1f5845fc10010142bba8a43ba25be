@@ -1,0 +1,240 @@
+/*
+ * isr_uart0.c
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#include "proto.h"
+#include "config.h"
+#include "queues.h"
+#include "u1_jobs.h"
+#include "u2_jobs.h"
+#include "ws_led.h"
+#include "app_status.h"
+#include "sched.h"
+#include "buttons.h"
+
+#include "chip.h"
+
+// ---- App handlers ----
+static void handle_led_reset(const uint8_t *pay, uint8_t pal){
+    (void)pay; (void)pal;
+    u1_jobs_clear_all();
+    u2_jobs_stop_all();
+    ws_clear_all();
+    extern volatile uint8_t g_off_broadcast_pending, g_off_broadcast2_pending;
+    g_off_broadcast_pending  = 1;
+    g_off_broadcast2_pending = 1;
+    // Clear only P2.3 (bit1) if needed: not strictly required here
+    g_status_ext &= (uint8_t)~BTN_P23_BIT;
+}
+
+static void handle_relay_set(const uint8_t *pay, uint8_t pal){
+    if (pal < 2) return;
+    // Implement your board relay function; prototype is from your original codebase
+    extern void Board_Relay_Set(uint8_t chan, bool on);
+    Board_Relay_Set(pay[0], (pay[1] == 0x01));
+}
+
+static void handle_status01_once(const uint8_t *pay, uint8_t pal){
+    if (pal == 0 || (pal >= 1 && pay[0] == 0x00)) {
+        g_status01_mask = 0xFFFFFFFFu;
+    } else {
+        const uint8_t con = pay[0];
+        if (con >= 1 && con <= 31) g_status01_mask = (1u << (con - 1));
+        else g_status01_mask = 0;
+    }
+    handle_led_reset(NULL, 0); // full reset behavior after one-shot request
+}
+
+static void handle_btnflag_reset(const uint8_t *pay, uint8_t pal){
+    (void)pay; (void)pal;
+    g_status_ext = 0x00;
+
+    const uint32_t view_alive = (g_alive_mask | round_alive_mask);
+    const uint32_t view_trig  = ((g_triggered_mask | round_triggered_mask) & view_alive);
+
+    g_force01_while_triggered_mask |= view_trig;
+
+    // OFF immediately on both buses + WS clear
+    extern volatile uint8_t g_off_broadcast_pending, g_off_broadcast2_pending;
+    g_off_broadcast_pending  = 1;
+    g_off_broadcast2_pending = 1;
+    ws_clear_all();
+
+    // Stop active jobs so OFF persists
+    u1_jobs_clear_all();
+    u2_jobs_stop_all();
+}
+
+static inline bool is_conn_configured(uint8_t con){
+    for (uint8_t i = 0; i < cfg_count; ++i) if (cfg_conn[i] == con) return true;
+    return false;
+}
+
+// SC=0x0A (APP->RX): Turn ON LED#1 for list of connectors (UART1 only)
+static void handle_led1_multi_con(const uint8_t *pay, uint8_t pal){
+    if (pal < 1) return;
+    uint8_t n = pay[0];
+    if (!n || pal < (uint8_t)(1 + n)) return;
+
+    NVIC_DisableIRQ(RITIMER_IRQn);
+    for (uint8_t i=0;i<n;++i){
+        const uint8_t con = pay[1+i];
+        if (con < 1 || con > 31) continue;
+        if (!is_conn_configured(con)) continue;
+
+        u1_jobs_remove_by_con_except(con, 1);
+        uint8_t idx = u1_job_find(con, 1);
+        if (idx == 0xFF) idx = u1_job_alloc(con, 1);
+        if (idx != 0xFF){
+            g_u1_jobs[idx].next_allowed_tick = (uint16_t)g_tick;
+            u1_jobs_rr = idx;
+        }
+    }
+    NVIC_EnableIRQ(RITIMER_IRQn);
+}
+
+// SC=0x0B: BIN multi-mask, and mirror WS to exact mask
+static void handle_bin_led_mask(const uint8_t *pay, uint8_t pal){
+    if (pal < 1) return;
+    const uint8_t max_led = pay[0];
+    if (!max_led || pal < (uint8_t)(1 + max_led)) return;
+
+    ws_set_mask_bin1_and_clear_others(max_led, &pay[1]);
+    u2_jobs_stop_all(); // avoid per-LED interference
+    bin_enqueue_multi_mask_uart2(max_led, &pay[1]);
+}
+
+// ===== SC=0x02 LED CTRL with mode byte after SC =====
+// mode=0x00: [00, 00, 00, 02, bin, led]  // legacy-as-current → BIN + WS(mirror if bin==1)
+// mode=0x01: [01, con, led]              // UART1
+// mode=0x02: [02, bin, bin_led, flags, con, con_led] // BIN + UART1 in one command
+static void handle_led_ctrl(const uint8_t *pay, uint8_t pal){
+    if (pal < 3) return;
+    const uint8_t mode = pay[0];
+
+    if (mode == 0x00){
+        if (pal < 6) return;
+        if (pay[1]!=0x00 || pay[2]!=0x00 || pay[3]!=0x02) return;
+        const uint8_t bin = pay[4], led = pay[5];
+
+        NVIC_DisableIRQ(RITIMER_IRQn);
+        u2_jobs_remove_by_bin_except(bin, led);
+        u2_job_start(bin, led);
+        uint8_t idx = u2_job_find(bin, led);
+        if (idx != 0xFF){
+            g_u2_jobs[idx].next_allowed_tick = (uint16_t)g_tick;
+            u2_jobs_rr = idx;
+        }
+        NVIC_EnableIRQ(RITIMER_IRQn);
+
+        if (bin == 1) ws_set_only_bin1(led);
+        return;
+    }
+
+    if (mode == 0x01){
+        if (pal < 3) return;
+        const uint8_t con = pay[1], led = pay[2];
+
+        NVIC_DisableIRQ(RITIMER_IRQn);
+        u1_jobs_remove_by_con_except(con, led);
+        uint8_t idx = u1_job_find(con, led);
+        if (idx == 0xFF) idx = u1_job_alloc(con, led);
+        if (idx != 0xFF){
+            g_u1_jobs[idx].next_allowed_tick = (uint16_t)g_tick;
+            u1_jobs_rr = idx;
+        }
+        NVIC_EnableIRQ(RITIMER_IRQn);
+        return;
+    }
+
+    if (mode == 0x02){
+        if (pal < 6) return;
+        const uint8_t bin     = pay[1];
+        const uint8_t bin_led = pay[2];
+        // const uint8_t flags = pay[3];
+        const uint8_t con     = pay[4];
+        const uint8_t con_led = pay[5];
+
+        // BIN side
+        NVIC_DisableIRQ(RITIMER_IRQn);
+        u2_jobs_remove_by_bin_except(bin, bin_led);
+        u2_job_start(bin, bin_led);
+        uint8_t bidx = u2_job_find(bin, bin_led);
+        if (bidx != 0xFF){
+            g_u2_jobs[bidx].next_allowed_tick = (uint16_t)g_tick;
+            u2_jobs_rr = bidx;
+        }
+        NVIC_EnableIRQ(RITIMER_IRQn);
+        if (bin == 1) ws_set_only_bin1(bin_led);
+
+        // UART1 side
+        NVIC_DisableIRQ(RITIMER_IRQn);
+        u1_jobs_remove_by_con_except(con, con_led);
+        uint8_t cidx = u1_job_find(con, con_led);
+        if (cidx == 0xFF) cidx = u1_job_alloc(con, con_led);
+        if (cidx != 0xFF){
+            g_u1_jobs[cidx].next_allowed_tick = (uint16_t)g_tick;
+            u1_jobs_rr = cidx;
+        }
+        NVIC_EnableIRQ(RITIMER_IRQn);
+        return;
+    }
+    // unknown mode → ignore
+}
+
+// ---- UART0 byte-stream FSM ----
+typedef enum { RXF_WAIT_SOF=0, RXF_WAIT_LEN, RXF_COLLECT_BODY, RXF_WAIT_END } rx_fsm_t;
+static volatile rx_fsm_t rx_state = RXF_WAIT_SOF;
+static volatile uint8_t  rx_len   = 0;
+static uint8_t           rx_buf[RX_LEN_MAX];
+static uint8_t           rx_idx   = 0;
+
+static void dispatch_app_frame(const uint8_t *p, uint8_t len){
+    if (len < 3) return;
+    const uint8_t group = p[0], id = p[1], sc = p[2];
+    const uint8_t *pay = (len > 3) ? &p[3] : NULL;
+    const uint8_t pal  = (len > 3) ? (uint8_t)(len - 3) : 0;
+    if (group != GRP_APP_TO_RX || id != RX_ID) return;
+
+    switch (sc){
+        case SC_POLL:          break;
+        case SC_UPLOAD_MAP:    handle_upload_map(pay, pal);         break;
+        case SC_LED_CTRL:      handle_led_ctrl(pay, pal);           break;
+        case SC_NEW_STATUS01:  handle_status01_once(pay, pal);      break;
+        case SC_LED_RESET:     handle_led_reset(pay, pal);          break;
+        case SC_RELAY_SET:     handle_relay_set(pay, pal);          break;
+        case SC_BTNFLAG_RESET: handle_btnflag_reset(pay, pal);      break;
+        case SC_STATUS:        handle_led1_multi_con(pay, pal);     break;
+        case SC_BIN_MASK:      handle_bin_led_mask(pay, pal);       break;
+        default: break;
+    }
+    request_status_reply();
+}
+
+void UART0_IRQHandler(void){
+    while (Chip_UART_ReadLineStatus(LPC_UART0) & UART_LSR_RDR){
+        const uint8_t b = Chip_UART_ReadByte(LPC_UART0);
+        g_app_last_activity_tick = (uint16_t)g_tick;
+        switch (rx_state){
+        case RXF_WAIT_SOF:      if (b == SOF) rx_state = RXF_WAIT_LEN; break;
+        case RXF_WAIT_LEN:
+            rx_len = b; rx_idx = 0;
+            if (!rx_len || rx_len > RX_LEN_MAX) { rx_state = RXF_WAIT_SOF; break; }
+            rx_state = RXF_COLLECT_BODY; break;
+        case RXF_COLLECT_BODY:
+            if (rx_idx < RX_LEN_MAX){
+                rx_buf[rx_idx++] = b;
+                if (rx_idx == rx_len) rx_state = RXF_WAIT_END;
+            } else { rx_state = RXF_WAIT_SOF; }
+            break;
+        case RXF_WAIT_END:
+            if (b == END_BYTE) dispatch_app_frame(rx_buf, rx_len);
+            rx_state = RXF_WAIT_SOF; break;
+        default: rx_state = RXF_WAIT_SOF; break;
+        }
+    }
+}
+

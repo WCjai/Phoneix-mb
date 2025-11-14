@@ -1,0 +1,111 @@
+#include "ws2812b.h"
+#include "chip.h"
+#include "board.h"
+#include <stdint.h>
+
+/* ========= Timing config =========
+   Pick one family:
+   - WS2812B: T0H ≈ 0.35µs, T0L ≈ 0.80µs, T1H ≈ 0.70µs, T1L ≈ 0.60µs, RES >= 50µs
+   - WS2813 : similar data timings, but RES typically >= 280–300µs
+*/
+#ifndef WS_IS_2813
+#define WS_IS_2813 1   /* set to 1 if you actually use WS2813 strips */
+#endif
+
+/* ========= GPIO pins =========
+   You drive both P3.25 and P3.26 together (LED_MASK).
+   Ensure those pins are configured as outputs before calling WS2812B_write().
+*/
+#ifndef LED_MASK
+#define LED_MASK ((1u << 25) | (1u << 26))
+#endif
+
+/* ========= Clock helpers ========= */
+#ifndef SystemCoreClock
+extern uint32_t SystemCoreClock;
+#endif
+
+/* Convert nanoseconds to approximate CPU cycles (round up) */
+static inline uint32_t ns_to_cycles(uint32_t ns){
+    /* cycles = ceil(ns * Fcpu / 1e9) */
+    uint64_t prod = (uint64_t)ns * (uint64_t)SystemCoreClock + 999999999ull;
+    return (uint32_t)(prod / 1000000000ull);
+}
+
+/* Busy-wait using NOPs for 'cycles' CPU cycles.
+   Each loop iteration costs ~1 cycle for the SUBS & BNE + 1 for the NOP,
+   but compilers can vary. We keep this conservative by doing pure NOPs
+   in a tight, counted loop whose body is 1 NOP + loop control. */
+static inline void delay_cycles(uint32_t cycles){
+    /* Ensure cycles >= a small floor to survive loop overhead */
+    if (cycles <= 2) { __NOP(); __NOP(); return; }
+    /* Crude loop: each iter does ~1 NOP + loop control (2–3 cycles total).
+       To avoid under-delay, multiply requested cycles by a factor < 1.0
+       would be bad; instead we overshoot slightly by adding a fudge. */
+    uint32_t iters = cycles / 2;  // ~2 cycles/iter effective
+    if (iters == 0) iters = 1;
+    while (iters--) { __NOP(); }
+}
+
+/* ===== Timing targets (adjusted to be safely within spec) ===== */
+static inline uint32_t t0h_cycles(void){ return ns_to_cycles(400); }  /* 0 -> high */
+static inline uint32_t t0l_cycles(void){ return ns_to_cycles(850); }  /* 0 -> low  */
+static inline uint32_t t1h_cycles(void){ return ns_to_cycles(800); }  /* 1 -> high */
+static inline uint32_t t1l_cycles(void){ return ns_to_cycles(450); }  /* 1 -> low  */
+
+static inline uint32_t treset_cycles(void){
+    return ns_to_cycles(WS_IS_2813 ? 300000 : 60000);  /* 300µs (WS2813) or 60µs (WS2812B) */
+}
+
+/* Small barriers so SET then delay then CLR is never reordered */
+#define MEM_BARRIER() __asm volatile ("" ::: "memory")
+
+/* ---- Low-level bit senders (timing critical) ---- */
+static inline void send_zero(void){
+    LPC_GPIO[3].SET = LED_MASK; MEM_BARRIER();
+    delay_cycles(t0h_cycles());
+    LPC_GPIO[3].CLR = LED_MASK; MEM_BARRIER();
+    delay_cycles(t0l_cycles());
+}
+static inline void send_one(void){
+    LPC_GPIO[3].SET = LED_MASK; MEM_BARRIER();
+    delay_cycles(t1h_cycles());
+    LPC_GPIO[3].CLR = LED_MASK; MEM_BARRIER();
+    delay_cycles(t1l_cycles());
+}
+
+/* ---- Public helpers (unchanged API) ---- */
+void turnOnRed(WS2812B* ws, int bin_led_num){
+    if (!ws || bin_led_num <= 0 || bin_led_num > ws->num_leds) return;
+    ws->leds[bin_led_num - 1].r = 255;
+    ws->leds[bin_led_num - 1].g = 0;
+    ws->leds[bin_led_num - 1].b = 0;
+}
+
+/* Data is GRB per WS2812 protocol */
+void WS2812B_write(WS2812B* ws){
+    if (!ws || !ws->leds || ws->num_leds == 0) return;
+
+    for (uint16_t i = 0; i < ws->num_leds; ++i){
+        RGB_t px = ws->leds[i];
+
+        /* Send G7..G0 */
+        for (uint8_t m = 0; m < 8; ++m){
+            (px.g & 0x80) ? send_one() : send_zero();
+            px.g <<= 1;
+        }
+        /* Send R7..R0 */
+        for (uint8_t m = 0; m < 8; ++m){
+            (px.r & 0x80) ? send_one() : send_zero();
+            px.r <<= 1;
+        }
+        /* Send B7..B0 */
+        for (uint8_t m = 0; m < 8; ++m){
+            (px.b & 0x80) ? send_one() : send_zero();
+            px.b <<= 1;
+        }
+    }
+
+    /* Latch/reset: ensure >= 50µs for WS2812B (we use 60µs), >= ~300µs for WS2813 */
+    delay_cycles(treset_cycles());
+}

@@ -34,7 +34,7 @@ static inline int pin_is_high(uint8_t pin){
     return  Chip_GPIO_GetPinState(LPC_GPIO, GPIO_BUTTON_PORT, pin);
 }
 
-void EINT3_IRQHandler(void){
+void GPIO_IRQ_HANDLER(void){
     /* Latch & clear pending edges on Port2 */
     uint32_t stat_f = Chip_GPIOINT_GetStatusFalling(LPC_GPIOINT, GPIOINT_PORT2);
     if (stat_f) Chip_GPIOINT_ClearIntStatus(LPC_GPIOINT, GPIOINT_PORT2, stat_f);
@@ -61,12 +61,7 @@ void EINT3_IRQHandler(void){
 
             g_status_ext |= BTN_P24_BIT;   // register ONE click for S1 (bit0)
             request_status_reply();        // push heartbeat to App
-            /* Optional: wake idle watchdog immediately
-               extern volatile uint16_t g_app_last_activity_tick;
-               g_app_last_activity_tick = (uint16_t)g_tick;
-            */
         } else if (s1.pressed && pin_is_high(GPIO_BUTTON_S1_PIN)) {
-            /* Rising too soon/noise: drop the pressed state without generating a click */
             s1.pressed = 0;
         }
     }
@@ -87,7 +82,7 @@ void EINT3_IRQHandler(void){
 
             g_status_ext |= BTN_P23_BIT;   // register ONE click for S2 (bit1)
             request_status_reply();
-            /* Optional wake as above */
+
         } else if (s2.pressed && pin_is_high(GPIO_BUTTON_S2_PIN)) {
             s2.pressed = 0;
         }
