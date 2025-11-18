@@ -1,0 +1,83 @@
+/*
+ * u2_jobs.c
+ *
+ *  Created on: 14-Nov-2025
+ *      Author: mad23
+ */
+
+#include "u2_jobs.h"
+#include "queues.h"
+#include "proto.h"
+#include "sched.h"
+
+volatile U2Job g_u2_jobs[MAX_U2_JOBS];
+uint8_t u2_jobs_rr = 0;
+
+static inline uint8_t u2_norm_led(uint8_t led) {
+    if (led == 0) return 0;                 // 0 stays 0 (treated as "no LED")
+    if (led <= 60) return led;              // in range
+    // Wrap to 1..60 (61->1, 63->3, 120->60, etc.)
+    return (uint8_t)(((led - 1u) % 60u) + 1u);
+}
+
+void u2_job_start(uint8_t bin, uint8_t led){
+    for (uint8_t i=0;i<MAX_U2_JOBS;++i){
+        if (g_u2_jobs[i].active && g_u2_jobs[i].bin==bin && g_u2_jobs[i].led==led){
+            g_u2_jobs[i].next_allowed_tick = (uint16_t)g_tick; return;
+        }
+    }
+    for (uint8_t i=0;i<MAX_U2_JOBS;++i){
+        if (!g_u2_jobs[i].active){ g_u2_jobs[i]=(U2Job){bin,led,(uint16_t)g_tick,1}; return; }
+    }
+}
+void u2_jobs_stop_by_led(uint8_t led){
+    for (uint8_t i=0;i<MAX_U2_JOBS;++i)
+        if (g_u2_jobs[i].active && g_u2_jobs[i].led==led) g_u2_jobs[i].active=0;
+}
+void u2_jobs_stop_all(void){ for (uint8_t i=0;i<MAX_U2_JOBS;++i) g_u2_jobs[i].active=0; }
+
+void u2_jobs_remove_by_bin_except(uint8_t bin, uint8_t keep_led){
+    for (uint8_t i=0;i<MAX_U2_JOBS;++i)
+        if (g_u2_jobs[i].active && g_u2_jobs[i].bin==bin && g_u2_jobs[i].led!=keep_led) g_u2_jobs[i].active=0;
+}
+uint8_t u2_job_find(uint8_t bin, uint8_t led){
+    for (uint8_t i=0;i<MAX_U2_JOBS;++i)
+        if (g_u2_jobs[i].active && g_u2_jobs[i].bin==bin && g_u2_jobs[i].led==led) return i;
+    return 0xFF;
+}
+
+void bin_enqueue_led_on_uart2(uint8_t bin, uint8_t led){
+	led = u2_norm_led(led);
+    uint8_t f[9] = { SOF, GRP_RX_TO_SLV, 0x05, SC_SLAVE, bin, 0x04, 0x01, led, END_BYTE };
+    (void)u2q_push_isr(f, sizeof f);
+}
+void bin_enqueue_led_off_broadcast_uart2(void){
+    uint8_t f[8] = { SOF, GRP_RX_TO_SLV, 0x04, SC_SLAVE, 0xFF, 0x03, 0x00, END_BYTE };
+    (void)u2q_push_isr(f, sizeof f);
+}
+void bin_enqueue_multi_mask_uart2(uint8_t max_led, const uint8_t *list){
+    if (!max_led) return;
+    U2Frame fr; uint8_t *p = fr.data;
+    *p++=SOF; *p++=GRP_RX_TO_SLV; *p++=(uint8_t)(3+1+max_led); *p++=SC_SLAVE;
+    *p++=0x01; *p++=0x04; *p++=max_led;
+    for(uint8_t i=0;i<max_led;++i) *p++=list[i];
+    *p++=END_BYTE;
+    fr.len = (uint8_t)(p - fr.data);
+    (void)u2q_push_isr(fr.data, fr.len);
+}
+
+bool u2_scheduler_emit_one(void){
+    for (uint8_t k=0;k<MAX_U2_JOBS;++k){
+        const uint8_t i = (uint8_t)((u2_jobs_rr + k) % MAX_U2_JOBS);
+        if (!g_u2_jobs[i].active) continue;
+        const bool time_ok = ((int16_t)((uint16_t)g_tick - g_u2_jobs[i].next_allowed_tick) >= 0);
+        if (time_ok){
+            bin_enqueue_led_on_uart2(g_u2_jobs[i].bin, g_u2_jobs[i].led);
+            g_u2_jobs[i].next_allowed_tick = (uint16_t)(g_tick + 1);
+            u2_jobs_rr = (uint8_t)((i + 1) % MAX_U2_JOBS);
+            return true;
+        }
+    }
+    return false;
+}
+

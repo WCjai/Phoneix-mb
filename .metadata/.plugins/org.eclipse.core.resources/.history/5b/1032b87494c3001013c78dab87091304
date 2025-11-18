@@ -107,7 +107,7 @@ void bin_enqueue_multi_mask_uart2(uint8_t max_led, const uint8_t *list){
     if (!max_led) return;
 
 #ifndef U2_MAX_MASK_LEN
-#define U2_MAX_MASK_LEN 140
+#define U2_MAX_MASK_LEN 120
 #endif
     if (max_led > U2_MAX_MASK_LEN) max_led = U2_MAX_MASK_LEN;
 

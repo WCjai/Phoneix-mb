@@ -76,21 +76,20 @@ void bin_enqueue_led_off_broadcast_uart2(void){
 }
 
 /* Helper: send a multi-mask frame with a prepared payload (zeros = skip) */
-static void u2_send_compact_frame(uint8_t bin_id, uint8_t count, const uint8_t *vals) {
-    if (!count) return;
+static void u2_send_mask_frame(uint8_t bin_id, uint8_t max_led, const uint8_t *payload) {
+    if (!max_led) return;
 
-    U2Frame fr;
-    uint8_t *p = fr.data;
+    U2Frame fr; uint8_t *p = fr.data;
 
     *p++ = SOF;
     *p++ = GRP_RX_TO_SLV;
-    *p++ = (uint8_t)(3 /*SC,bin,sub*/ + 1 /*count*/ + count);
+    *p++ = (uint8_t)(3 + 1 + max_led);  /* SC_SLAVE, bin, subcode, count, payload[max_led] */
     *p++ = SC_SLAVE;
-    *p++ = bin_id;     // 1 or 2
-    *p++ = 0x04;       // BIN subcode
-    *p++ = count;      // number of entries (compact)
+    *p++ = bin_id;                      /* 1 or 2 */
+    *p++ = 0x04;                        /* BIN subcode */
+    *p++ = max_led;
 
-    for (uint8_t i = 0; i < count; ++i) *p++ = vals[i];
+    for (uint8_t i = 0; i < max_led; ++i) *p++ = payload[i];
 
     *p++ = END_BYTE;
     fr.len = (uint8_t)(p - fr.data);
@@ -107,7 +106,7 @@ void bin_enqueue_multi_mask_uart2(uint8_t max_led, const uint8_t *list){
     if (!max_led) return;
 
 #ifndef U2_MAX_MASK_LEN
-#define U2_MAX_MASK_LEN 140
+#define U2_MAX_MASK_LEN 120
 #endif
     if (max_led > U2_MAX_MASK_LEN) max_led = U2_MAX_MASK_LEN;
 

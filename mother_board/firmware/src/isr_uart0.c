@@ -201,14 +201,14 @@ static void dispatch_app_frame(const uint8_t *p, uint8_t len){
 
     switch (sc){
         case SC_POLL:          break;
-        case SC_UPLOAD_MAP:    handle_upload_map(pay, pal);         break;
-        case SC_LED_CTRL:      handle_led_ctrl(pay, pal);           break;
-        case SC_NEW_STATUS01:  handle_status01_once(pay, pal);      break;
-        case SC_LED_RESET:     handle_led_reset(pay, pal);          break;
-        case SC_RELAY_SET:     handle_relay_set(pay, pal);          break;
-        case SC_BTNFLAG_RESET: handle_btnflag_reset(pay, pal);      break;
-        case SC_STATUS:        handle_led1_multi_con(pay, pal);     break;
-        case SC_BIN_MASK:      handle_bin_led_mask(pay, pal);       break;
+        case SC_UPLOAD_MAP:    handle_upload_map(pay, pal);         break; //give number of cons to start round robin in uart 1
+        case SC_LED_CTRL:      handle_led_ctrl(pay, pal);           break; //matix led on off depends on mode bin led can be controlled 
+        case SC_NEW_STATUS01:  handle_status01_once(pay, pal);      break; //makes alive state 05 to 01 , and leds off
+        case SC_LED_RESET:     handle_led_reset(pay, pal);          break; //led rest offs 
+        case SC_RELAY_SET:     handle_relay_set(pay, pal);          break; //relay on off
+        case SC_BTNFLAG_RESET: handle_btnflag_reset(pay, pal);      break; //rest the s1 s2 sw to 00
+        case SC_STATUS:        handle_led1_multi_con(pay, pal);     break; //turn ON led 1 on alive cons
+        case SC_BIN_MASK:      handle_bin_led_mask(pay, pal);       break; //turn ON leds numbers on addressable led and BIN
         default: break;
     }
     request_status_reply();

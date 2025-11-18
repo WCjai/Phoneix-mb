@@ -76,21 +76,20 @@ void bin_enqueue_led_off_broadcast_uart2(void){
 }
 
 /* Helper: send a multi-mask frame with a prepared payload (zeros = skip) */
-static void u2_send_compact_frame(uint8_t bin_id, uint8_t count, const uint8_t *vals) {
-    if (!count) return;
+static void u2_send_mask_frame(uint8_t bin_id, uint8_t max_led, const uint8_t *payload) {
+    if (!max_led) return;
 
-    U2Frame fr;
-    uint8_t *p = fr.data;
+    U2Frame fr; uint8_t *p = fr.data;
 
     *p++ = SOF;
     *p++ = GRP_RX_TO_SLV;
-    *p++ = (uint8_t)(3 /*SC,bin,sub*/ + 1 /*count*/ + count);
+    *p++ = (uint8_t)(3 + 1 + max_led);  /* SC_SLAVE, bin, subcode, count, payload[max_led] */
     *p++ = SC_SLAVE;
-    *p++ = bin_id;     // 1 or 2
-    *p++ = 0x04;       // BIN subcode
-    *p++ = count;      // number of entries (compact)
+    *p++ = bin_id;                      /* 1 or 2 */
+    *p++ = 0x04;                        /* BIN subcode */
+    *p++ = max_led;
 
-    for (uint8_t i = 0; i < count; ++i) *p++ = vals[i];
+    for (uint8_t i = 0; i < max_led; ++i) *p++ = payload[i];
 
     *p++ = END_BYTE;
     fr.len = (uint8_t)(p - fr.data);
@@ -106,32 +105,34 @@ static void u2_send_compact_frame(uint8_t bin_id, uint8_t count, const uint8_t *
 void bin_enqueue_multi_mask_uart2(uint8_t max_led, const uint8_t *list){
     if (!max_led) return;
 
-#ifndef U2_MAX_MASK_LEN
-#define U2_MAX_MASK_LEN 140
-#endif
+    /* Cap to a safe stack buffer length if needed. */
     if (max_led > U2_MAX_MASK_LEN) max_led = U2_MAX_MASK_LEN;
 
-    // Build COMPACT arrays (no zeros)
-    uint8_t bin1_vals[U2_MAX_MASK_LEN];  // <=60, unchanged
-    uint8_t bin2_vals[U2_MAX_MASK_LEN];  // >60, subtract 60
-    uint8_t n1 = 0, n2 = 0;
+    uint8_t has_bin1 = 0, has_bin2 = 0;
 
+    /* Build and send bin-1 payload (<=60) */
+    uint8_t mask1[U2_MAX_MASK_LEN];
+    memset(mask1, 0, max_led);
     for (uint8_t i = 0; i < max_led; ++i){
         uint8_t l = list[i];
-        if (l == 0) continue;
-
-        if (l <= 60) {
-            if (n1 < U2_MAX_MASK_LEN) bin1_vals[n1++] = l;
-        } else {
-            uint8_t reduced = (uint8_t)(l - 60);   // single subtract rule
-            if (reduced == 0) continue;            // safety, though 61->1 so won't be 0
-            if (n2 < U2_MAX_MASK_LEN) bin2_vals[n2++] = reduced;
+        if (l != 0 && l <= 60){
+            mask1[i] = l;  /* keep as-is */
+            has_bin1 = 1;
         }
     }
+    if (has_bin1) u2_send_mask_frame(1, max_led, mask1);
 
-    // Send only if there are entries; payload has NO zeros and count matches length
-    if (n1) u2_send_compact_frame(1, n1, bin1_vals);
-    if (n2) u2_send_compact_frame(2, n2, bin2_vals);
+    /* Build and send bin-2 payload (>60, normalized) */
+    uint8_t mask2[U2_MAX_MASK_LEN];
+    memset(mask2, 0, max_led);
+    for (uint8_t i = 0; i < max_led; ++i){
+        uint8_t l = list[i];
+        if (l > 60){
+            mask2[i] = u2_norm_led(l);  /* 61->1, 63->3, ..., 120->60 */
+            has_bin2 = 1;
+        }
+    }
+    if (has_bin2) u2_send_mask_frame(2, max_led, mask2);
 }
 
 /* ---------------- Scheduler ---------------- */

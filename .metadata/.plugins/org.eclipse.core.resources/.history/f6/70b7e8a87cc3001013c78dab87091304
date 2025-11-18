@@ -19,7 +19,7 @@
 
 // Sizes
 #define MAX_CFG                  31
-#define WS_LED_COUNT             120
+#define WS_LED_COUNT             96
 #define MAX_U1_JOBS              32
 #define MAX_U2_JOBS              16
 #define U1_TXQ_CAP               128
